@@ -1,136 +1,130 @@
-# Google Apps Script TypeScript Skeleton
+# Paytrack - Számlák és utalások kezelése
 
-Ez a repository egy skeleton projekt Google Apps Script fejlesztéshez. A célja az, hogy új Google Sheetshez kötött Apps Script projekteket gyorsan lehessen indítani egy előre elkészített, TypeScript alapú helyi környezettel.
+A Paytrack a MOON42 RDI Kft. beérkező és fizetendő számláinak nyilvántartását támogató Google Apps Script projekt.
 
-A skeletonból kiindulva az új projekt menete röviden:
+A rendszer egy már létező Google Sheets munkafüzetet egészít ki automatizmusokkal. A kód TypeScriptben készül, a Google Apps Script projektbe pedig `clasp` segítségével kerül feltöltésre.
 
-1. Klónozd ezt a repót.
-2. Telepítsd a Node-függőségeket.
-3. Hozz létre egy új Google Sheetet.
-4. Hozd létre benne a bound Apps Script projektet.
-5. Másold be a kapott `Script ID`-t a helyi `.clasp.json` fájlba.
-6. Pushold fel a buildelt kódot.
+## Jelenlegi funkciók
 
-## Mire való ez a skeleton
+### K&H HUF GIRO utalási export
 
-Ez a projekt azt a kényelmet adja meg, hogy minden új Google Sheets + Apps Script projekted ugyanarról az alapról induljon:
+A projekt megvalósítja a belföldi forintutalások exportját a K&H vállalkozói e-bank tranzakció import funkciójának `IV. Egyszerűsített forintátutalás` formátuma szerint.
 
-- TypeScript forráskód;
-- előre beállított `clasp` workflow;
-- külön `src/` és `build/` mappa;
-- automatikus manifest másolás build közben;
-- egy egyszerű minta custom function.
+A funkció a `Számlák` menü `Forint utalások exportja` pontjából indul. A menü megnyit egy sidebar-t, ahol az `Ellenőrzés` gomb összegyűjti és validálja a `Rögzíthető` státuszú, `HUF` pénznemű számlákat.
 
-Így nem kell minden új projekt elején újra kézzel összerakni a TypeScript, `clasp` és Apps Script build környezetet.
+Sikeres ellenőrzés után a sidebar:
 
-## Projektstruktúra
+- megmutatja az exportálható számlák számát,
+- megmutatja a teljes exportálandó összeget,
+- utalási nap szerint csoportosítja a tételek összegét és darabszámát,
+- minden utalási naphoz letölthető `.HUF.CSV` fájlokat ad,
+- 40 tételnél nagyobb napi mennyiséget több fájlra bont.
+
+Hiba esetén a rendszer nem készít exportot. A sidebar sor- és mezőszinten listázza a javítandó adatokat.
+
+Az export nem módosítja a táblázat adatait: nem állít státuszt, nem ír dátumot, és nem jelöli késznek az utalásokat.
+
+## Google Sheets munkafüzet
+
+### `SZÁMLÁK` munkalap
+
+A számlák nyilvántartása a `SZÁMLÁK` munkalapon történik. A munkalap első sora fejlécsor, az Apps Script az oszlopokat fejlécnév alapján keresi.
+
+A GIRO exporthoz szükséges oszlopok:
+
+- `Kedvezményezett`: a számla kedvezményezettje.
+- `Számlaszám`: a kedvezményezett bankszámlaszáma.
+- `Közlemény`: az utalási közlemény.
+- `bruttó`: az utalandó összeg.
+- `pénznem`: az összeg devizaneme, HUF exportnál `HUF`.
+- `státusz`: a fizetési státusz, exporthoz `Rögzíthető`.
+- `utalás napja`: az utalás értéknapja.
+
+A táblázatban további használt oszlopok:
+
+- `határidő`: a fizetési határidő.
+- `komment`: belső megjegyzés.
+- `PS`: fizetettségi státusz, ahol `0` fizetve, `1` fizetetlen, de nem lejárt, `2` lejárt fizetési határidő.
+
+### `PARTNEREK` munkalap
+
+A `PARTNEREK` munkalap a partnerek bankszámlaszámait tartalmazza:
+
+- A oszlop: partner neve.
+- B oszlop: partner számlaszáma.
+
+A munkalap jelenleg egyszerű adatlista, fejlécek és típusos táblázat nélkül. Ha egy partnernek több számlaszáma van, külön néven szerepelhetnek, például `Partner Kft. (EUR)` és `Partner Kft. (HUF)`.
+
+A számlaszámok jellemzően GIRO formátumban vannak rögzítve, `2x8` vagy `3x8` számjegyből álló, kötőjelezett alakban.
+
+## GIRO export szabályai
+
+Az export csak azokat a sorokat veszi figyelembe, ahol:
+
+- a `státusz` pontosan `Rögzíthető`,
+- a `pénznem` pontosan `HUF`,
+- az `utalás napja` ki van töltve, és nem múltbeli dátum,
+- a `bruttó` pozitív egész forintösszeg,
+- a `Számlaszám` érvényes 16 vagy 24 számjegyű GIRO szám.
+
+A kedvezményezett számlaszáma exportkor normalizálva kerül a fájlba, vagyis a kötőjelek és szóközök nélkül.
+
+Az exportált CSV oszlopai:
+
+- `Forrás számlaszám`
+- `Partner számlaszáma`
+- `Partner neve`
+- `Átutalandó összeg`
+- `Átutalandó deviza`
+- `Közlemény`
+- `Átutalás egyedi azonosítója`
+- `Értéknap`
+
+Az `Átutalás egyedi azonosítója` mezőt a rendszer jelenleg üresen hagyja. Az `Értéknap` formátuma `yyyy.MM.dd`.
+
+A fájlok neve:
 
 ```text
-.
-├── .clasp.json.example
-├── .gitignore
-├── README.md
-├── appsscript.json
-├── package.json
-├── package-lock.json
-├── scripts/
-│   └── copy-manifest.mjs
-├── src/
-│   └── Code.ts
-└── tsconfig.json
+paytrack-huf-YYYYMMDD-SS.HUF.CSV
 ```
 
-Az egyes fontosabb elemek szerepe:
+Ahol `SS` az adott naphoz tartozó fájl sorszáma, például `01` vagy `02`.
 
-- `src/`
-  Itt van a TypeScript forráskód. Az Apps Script logikát itt érdemes írni.
+## Konfiguráció
 
-- `build/`
-  Generált kimeneti mappa. Ide kerül a fordított JavaScript és a bemásolt `appsscript.json`. Ez a mappa nincs verziókezelés alatt.
+A HUF exporthoz be kell állítani a terhelendő MOON42 bankszámlaszámot Apps Script Script Property-ként:
 
-- `appsscript.json`
-  Az Apps Script manifest. Ide kerülnek a projekt szintű beállítások, például időzóna, runtime vagy később scope-ok és service dependency-k.
+```text
+PAYTRACK_HUF_SOURCE_ACCOUNT
+```
 
-- `.clasp.json.example`
-  Minta `clasp` konfiguráció. Ebből kell új projektnél létrehozni a valódi `.clasp.json` fájlt.
+Az érték lehet GIRO vagy IBAN alakú számlaszám. A rendszer a kötőjeleket és szóközöket eltávolítja export előtt.
 
-- `.clasp.json`
-  A valódi, helyi `clasp` konfiguráció. Ez nincs verziózva, mert projekt-specifikus `scriptId`-t tartalmaz.
+Beállítás az Apps Script felületen:
 
-- `scripts/copy-manifest.mjs`
-  Build után átmásolja az `appsscript.json` fájlt a `build/` mappába.
+1. Nyisd meg az Apps Script projektet.
+2. Project Settings.
+3. Script Properties.
+4. Add script property.
+5. Név: `PAYTRACK_HUF_SOURCE_ACCOUNT`.
+6. Érték: a HUF forrásszámla.
 
-## Hogyan működik a build és a push
+## Fejlesztés
 
-Ez a projekt nem közvetlenül a TypeScript fájlokat tölti fel Google Apps Scriptbe.
+### Követelmények
 
-A folyamat:
+- Node.js
+- npm
+- Google Apps Script hozzáférés
+- `clasp` autentikáció a fejlesztői gépen
 
-1. A `src/*.ts` fájlokat a TypeScript compiler lefordítja JavaScriptre.
-2. A kimenet a `build/` mappába kerül.
-3. A `scripts/copy-manifest.mjs` bemásolja az `appsscript.json` fájlt a `build/` mappába.
-4. A `clasp push` a `build/` mappából tölti fel a fájlokat.
-
-Ez azért hasznos, mert a Google Apps Script JavaScriptet kap, miközben te helyben TypeScriptben dolgozol.
-
-## Új projekt indítása ebből a skeletonból
-
-Ez a legfontosabb rész a repo használatához.
-
-### 1. Klónozd a skeleton projektet
+### Telepítés
 
 ```bash
-git clone <YOUR_TEMPLATE_REPO_URL> my-new-sheet-project
-cd my-new-sheet-project
+npm ci
 ```
 
-Ha szeretnéd, ezen a ponton át is nevezheted a projektet a saját igényeid szerint.
-
-### 2. Telepítsd a függőségeket
-
-```bash
-npm install
-```
-
-### 3. Hozz létre egy új Google Sheetet
-
-Nyisd meg a Google Drive-ot, és hozz létre egy új spreadsheetet.
-
-### 4. Hozd létre a Sheethez kötött Apps Script projektet
-
-A frissen létrehozott Google Sheetben nyisd meg:
-
-`Extensions > Apps Script`
-
-Ez létrehozza a Google Sheethez kötött bound Apps Script projektet.
-
-### 5. Másold ki a Script ID-t
-
-Az Apps Script editorban nyisd meg:
-
-`Project Settings > Script ID`
-
-Másold ki a megjelenő `Script ID` értéket.
-
-### 6. Hozd létre a helyi `.clasp.json` fájlt
-
-Másold le a minta konfigurációt:
-
-```bash
-cp .clasp.json.example .clasp.json
-```
-
-Ezután a `.clasp.json` fájlban cseréld le ezt:
-
-```json
-"scriptId": "PASTE_YOUR_SCRIPT_ID_HERE"
-```
-
-a saját Apps Script projekted valódi `Script ID`-jára.
-
-### 7. Jelentkezz be `clasp`-pal
-
-Ha még nem vagy bejelentkezve:
+Ha a gépen még nincs `clasp` bejelentkezés:
 
 ```bash
 npx clasp login
@@ -142,36 +136,20 @@ Headless környezetben:
 npx clasp login --no-localhost
 ```
 
-### 8. Futtasd a buildet
+### Build
 
 ```bash
 npm run build
 ```
 
-### 9. Pushold fel a projektet
+A build:
 
-```bash
-npm run push
-```
+1. lefuttatja a TypeScript fordítót,
+2. a `build` könyvtárba készíti a JavaScript fájlokat,
+3. átmásolja az `appsscript.json` manifestet,
+4. átmásolja a `src` alatti `.html` fájlokat is.
 
-Ezzel a lokális TypeScript projekted felkerül a frissen létrehozott, Sheethez kötött Apps Script projektbe.
-
-## Fejlesztési workflow a későbbiekben
-
-Miután az első kapcsolat létrejött, a tipikus napi workflow ez:
-
-1. Módosítsd a kódot a `src/` mappában.
-2. Futtasd:
-   ```bash
-   npm run build
-   ```
-3. Ha minden rendben:
-   ```bash
-   npm run push
-   ```
-4. Ellenőrizd a működést a Google Sheetben.
-
-Ha folyamatosan szeretnéd fordítani a TypeScriptet fejlesztés közben:
+Fejlesztés közben használható folyamatos fordítás:
 
 ```bash
 npm run watch
@@ -179,56 +157,75 @@ npm run watch
 
 Fontos: a `watch` csak fordít, nem pushol automatikusan.
 
-## Elérhető npm parancsok
+### Push Apps Scriptbe
 
-- `npm run build`
-  Lefordítja a TypeScriptet és bemásolja a manifestet a `build/` mappába.
+Először készíts helyi `.clasp.json` fájlt a `.clasp.json.example` alapján, és állítsd be benne a cél Apps Script `scriptId` értéket.
 
-- `npm run watch`
-  Figyeli a `src/` mappa változásait és újrafordít.
+Ezután:
 
-- `npm run push`
-  Build után feltölti a `build/` mappa tartalmát az Apps Script projektbe.
-
-- `npm run pull`
-  Lehúzza a távoli Apps Script projekt aktuális tartalmát.
-
-## Miért nincs verziózva a `.clasp.json`
-
-A `.clasp.json` tartalmazza az adott Google Apps Script projekt egyedi `scriptId` azonosítóját. Ez minden konkrét projektben más lesz, ezért a skeleton repo nem ezt a fájlt verziózza, hanem egy `.clasp.json.example` mintát ad hozzá.
-
-Ez azért jó, mert:
-
-- a skeleton újrafelhasználható marad;
-- nem kerül bele egy konkrét projektazonosító a template-be;
-- minden új projekt saját `scriptId`-val indulhat.
-
-## TypeScript beállítások
-
-A [tsconfig.json](/home/garaik/work/clasp/clasptest/tsconfig.json) fontosabb részei:
-
-- `rootDir: "src"`
-- `outDir: "build"`
-- `types: ["google-apps-script"]`
-- `strict: true`
-- `noEmitOnError: true`
-
-Ezek biztosítják, hogy a forrás a `src/` mappában legyen, a kimenet a `build/` mappába kerüljön, és a fordítás hibás kód esetén megálljon.
-
-## Minta kód
-
-A [src/Code.ts](/home/garaik/work/clasp/clasptest/src/Code.ts) jelenleg egy egyszerű példa Google Sheets custom functiont tartalmaz:
-
-```ts
-function ADD_NUMBERS(a: unknown, b: unknown): number
+```bash
+npm run push
 ```
 
-Ez csak mintaindulópont. Új projekt indításakor nyugodtan lecserélheted a saját Apps Script logikádra.
+A `push` script előbb buildel, majd `clasp push` paranccsal feltölti a `build` könyvtár tartalmát.
 
-## Fontos megjegyzések
+### Pull Apps Scriptből
 
-- A Google Apps Script végül JavaScriptet futtat, nem közvetlen TypeScriptet.
-- A `build/` mappa generált tartalom, kézzel nem ezt érdemes szerkeszteni.
-- A tényleges forráskódot mindig a `src/` mappában érdemes módosítani.
-- Ha megváltozik a kapcsolt Apps Script projekt, a helyi `.clasp.json` fájl `scriptId` értékét kell frissíteni.
-- A `clasp push` csak érvényes Google bejelentkezéssel működik.
+```bash
+npm run pull
+```
+
+A projekt fejlesztési iránya szerint a forráskód elsődleges helye a repo `src` könyvtára. Pull után ellenőrizni kell, hogy az Apps Script felületen történt módosítások nem írják-e felül a TypeScript forrást.
+
+### Elérhető npm parancsok
+
+- `npm run build`: TypeScript fordítás, manifest és HTML fájlok másolása a `build` könyvtárba.
+- `npm run watch`: TypeScript figyelő mód.
+- `npm run push`: build után feltöltés Apps Scriptbe.
+- `npm run pull`: távoli Apps Script projekt lehúzása.
+
+## Projekt struktúra
+
+```text
+.
+├── appsscript.json
+├── package.json
+├── scripts/
+│   └── copy-manifest.mjs
+├── src/
+│   ├── Code.ts
+│   └── HufTransferExportSidebar.html
+└── tsconfig.json
+```
+
+Fontosabb fájlok:
+
+- `src/Code.ts`: Apps Script backend, Sheets menü, validáció, CSV generálás.
+- `src/HufTransferExportSidebar.html`: sidebar felület és kliensoldali letöltés.
+- `scripts/copy-manifest.mjs`: build utáni manifest és HTML másolás.
+- `appsscript.json`: Apps Script manifest, V8 runtime és Budapest timezone.
+
+## Tesztelés
+
+Jelenleg nincs automatizált test suite. A minimális ellenőrzés:
+
+```bash
+npm run build
+```
+
+Manuális ellenőrzési forgatókönyvek:
+
+- hiányzó `PAYTRACK_HUF_SOURCE_ACCOUNT` property esetén validációs hiba jelenik meg,
+- hiányzó kötelező oszlop esetén validációs hiba jelenik meg,
+- `Rögzíthető` + `HUF` sorok megjelennek a napi összesítésben,
+- nem HUF sorok, üres utalási nap, múltbeli dátum, nem egész összeg hibáznak,
+- 41 azonos napra eső tétel két exportfájlt eredményez,
+- a letöltött fájl fejlécsort tartalmaz, pontosvesszővel elválasztott, és `.HUF.CSV` kiterjesztésű.
+
+## Későbbi lehetőségek
+
+- automatikus tesztek bevezetése a validációhoz és CSV generáláshoz,
+- deviza vagy SEPA export,
+- export után opcionális státuszkezelés,
+- külön konfigurációs munkalap,
+- partneradatok strukturáltabb kezelése.

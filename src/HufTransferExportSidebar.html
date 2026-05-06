@@ -1,0 +1,245 @@
+<!doctype html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Arial, sans-serif;
+        font-size: 13px;
+        color: #202124;
+      }
+
+      body {
+        margin: 0;
+        padding: 16px;
+        background: #fff;
+      }
+
+      button {
+        border: 0;
+        border-radius: 4px;
+        background: #1a73e8;
+        color: #fff;
+        cursor: pointer;
+        font: inherit;
+        min-height: 32px;
+        padding: 7px 12px;
+      }
+
+      button:disabled {
+        background: #dadce0;
+        color: #5f6368;
+        cursor: default;
+      }
+
+      .secondary-button {
+        background: #e8f0fe;
+        color: #174ea6;
+        margin-top: 8px;
+        text-align: left;
+        width: 100%;
+      }
+
+      .summary {
+        border-top: 1px solid #dadce0;
+        margin-top: 16px;
+        padding-top: 12px;
+      }
+
+      .day {
+        border-top: 1px solid #e8eaed;
+        margin-top: 12px;
+        padding-top: 12px;
+      }
+
+      .day-title {
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+
+      .muted {
+        color: #5f6368;
+      }
+
+      .error-list {
+        border-top: 1px solid #f4c7c3;
+        margin-top: 16px;
+        padding-top: 12px;
+      }
+
+      .error {
+        background: #fce8e6;
+        border-radius: 4px;
+        margin-top: 8px;
+        padding: 8px;
+      }
+
+      .status {
+        margin-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="checkButton" type="button">Ellenőrzés</button>
+    <div id="status" class="status muted"></div>
+    <div id="result"></div>
+
+    <script>
+      const checkButton = document.getElementById("checkButton");
+      const statusElement = document.getElementById("status");
+      const resultElement = document.getElementById("result");
+
+      checkButton.addEventListener("click", runPreview);
+
+      function runPreview() {
+        setBusy(true, "Ellenőrzés folyamatban...");
+        resultElement.innerHTML = "";
+
+        google.script.run
+          .withSuccessHandler((preview) => {
+            setBusy(false, "");
+            renderPreview(preview);
+          })
+          .withFailureHandler((error) => {
+            setBusy(false, "");
+            renderFailure(error);
+          })
+          .getHufTransferExportPreview();
+      }
+
+      function renderPreview(preview) {
+        if (!preview.ok) {
+          renderValidationErrors(preview.errors);
+          return;
+        }
+
+        if (preview.totalItemCount === 0) {
+          resultElement.innerHTML =
+            '<div class="summary muted">Nincs Rögzíthető státuszú HUF számla.</div>';
+          return;
+        }
+
+        const days = preview.days.map(renderDay).join("");
+        resultElement.innerHTML = `
+          <div class="summary">
+            <div><strong>${preview.totalItemCount}</strong> számla exportálható.</div>
+            <div class="muted">Összesen: ${formatAmount(preview.totalAmount)} HUF</div>
+          </div>
+          ${days}
+        `;
+
+        resultElement.querySelectorAll("[data-file-id]").forEach((button) => {
+          button.addEventListener("click", () => downloadFile(button.dataset.fileId));
+        });
+      }
+
+      function renderDay(day) {
+        const files = day.files
+          .map(
+            (file) => `
+              <button class="secondary-button" type="button" data-file-id="${escapeAttribute(file.id)}">
+                ${escapeHtml(file.name)} (${file.itemCount} tétel, ${formatAmount(file.totalAmount)} HUF)
+              </button>
+            `,
+          )
+          .join("");
+
+        return `
+          <div class="day">
+            <div class="day-title">${escapeHtml(day.valueDate)}</div>
+            <div class="muted">${day.itemCount} tétel, ${formatAmount(day.totalAmount)} HUF</div>
+            ${files}
+          </div>
+        `;
+      }
+
+      function renderValidationErrors(errors) {
+        const items = errors
+          .map((error) => {
+            const row = error.rowNumber ? `${error.rowNumber}. sor, ` : "";
+            return `
+              <div class="error">
+                <strong>${escapeHtml(row + error.field)}</strong><br>
+                ${escapeHtml(error.message)}
+              </div>
+            `;
+          })
+          .join("");
+
+        resultElement.innerHTML = `
+          <div class="error-list">
+            <strong>Az export nem készíthető el.</strong>
+            ${items}
+          </div>
+        `;
+      }
+
+      function downloadFile(fileId) {
+        setBusy(true, "Fájl előkészítése...");
+
+        google.script.run
+          .withSuccessHandler((file) => {
+            setBusy(false, "");
+            const bytes = base64ToBytes(file.base64);
+            const blob = new Blob([bytes], {
+              type: `${file.mimeType};charset=${file.charset}`,
+            });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = file.name;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+          })
+          .withFailureHandler((error) => {
+            setBusy(false, "");
+            renderFailure(error);
+          })
+          .getHufTransferExportFile(fileId);
+      }
+
+      function renderFailure(error) {
+        resultElement.innerHTML = `
+          <div class="error-list">
+            <strong>Hiba történt.</strong>
+            <div class="error">${escapeHtml(error.message || String(error))}</div>
+          </div>
+        `;
+      }
+
+      function setBusy(isBusy, message) {
+        checkButton.disabled = isBusy;
+        statusElement.textContent = message;
+      }
+
+      function base64ToBytes(base64) {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) {
+          bytes[index] = binary.charCodeAt(index);
+        }
+        return bytes;
+      }
+
+      function formatAmount(value) {
+        return Number(value).toLocaleString("hu-HU");
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function escapeAttribute(value) {
+        return escapeHtml(value);
+      }
+    </script>
+  </body>
+</html>
