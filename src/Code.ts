@@ -28,8 +28,7 @@ const CSV_HEADERS = [
 ] as const;
 
 const ALLOWED_TEXT_PATTERN =
-  /^[A-Za-z0-9áéíóúöüÁÉÍÓÚÖÜőŐűŰÄßäý \t\r\n,\-.,!?_:()+@;=<>~%*$#&/§]*$/;
-const CSV_SAFE_TEXT_PATTERN = /^[^\t\r\n;]*$/;
+  /^[A-Za-z0-9áéíóúöüÁÉÍÓÚÖÜőŐűŰÄßäý ,\-.,!?_:()+@=<>~%*$#&/§]*$/;
 
 type RequiredHeader = (typeof REQUIRED_HEADERS)[number];
 
@@ -157,52 +156,51 @@ function collectHufTransferExportContext(): {
   errors: ValidationError[];
 } {
   const errors: ValidationError[] = [];
-  const config = readConfig(errors);
-  const rawSourceAccount = config[SOURCE_ACCOUNT_PROPERTY] || "";
+  const configResult = readConfig();
+  errors.push(...configResult.errors);
+
+  const rawSourceAccount = configResult.config[SOURCE_ACCOUNT_PROPERTY] || "";
   const sourceAccount = normalizeAccount(rawSourceAccount);
 
-  if (!rawSourceAccount.trim()) {
-    errors.push({
-      rowNumber: null,
-      field: SOURCE_ACCOUNT_PROPERTY,
-      message: "A HUF forrásszámla nincs beállítva a CONFIG munkalapon.",
-    });
-  } else if (!isValidSourceAccount(sourceAccount)) {
-    errors.push({
-      rowNumber: null,
-      field: SOURCE_ACCOUNT_PROPERTY,
-      message: "A HUF forrásszámla csak kötőjel nélküli GIRO vagy IBAN formátumban exportálható.",
-    });
+  if (configResult.isReadable) {
+    if (!rawSourceAccount.trim()) {
+      addValidationError(
+        errors,
+        null,
+        SOURCE_ACCOUNT_PROPERTY,
+        "A HUF forrásszámla nincs beállítva a CONFIG munkalapon.",
+      );
+    } else if (!isValidSourceAccount(sourceAccount)) {
+      addValidationError(
+        errors,
+        null,
+        SOURCE_ACCOUNT_PROPERTY,
+        "A HUF forrásszámla csak kötőjel nélküli GIRO vagy IBAN formátumban exportálható.",
+      );
+    }
   }
 
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(INVOICE_SHEET_NAME);
   if (!sheet) {
-    errors.push({
-      rowNumber: null,
-      field: INVOICE_SHEET_NAME,
-      message: "Nem található a SZÁMLÁK munkalap.",
-    });
+    addValidationError(errors, null, INVOICE_SHEET_NAME, "Nem található a SZÁMLÁK munkalap.");
     return { sourceAccount, transfers: [], errors };
   }
 
   const values = sheet.getDataRange().getValues();
   if (values.length < 1) {
-    errors.push({
-      rowNumber: null,
-      field: INVOICE_SHEET_NAME,
-      message: "A SZÁMLÁK munkalapon nincs fejlécsor.",
-    });
+    addValidationError(
+      errors,
+      null,
+      INVOICE_SHEET_NAME,
+      "A SZÁMLÁK munkalapon nincs fejlécsor.",
+    );
     return { sourceAccount, transfers: [], errors };
   }
 
   const headerMap = buildHeaderMap(values[0]);
   const missingHeaders = REQUIRED_HEADERS.filter((header) => headerMap[header] === undefined);
   missingHeaders.forEach((header) => {
-    errors.push({
-      rowNumber: 1,
-      field: header,
-      message: "Hiányzó kötelező oszlop.",
-    });
+    addValidationError(errors, 1, header, "Hiányzó kötelező oszlop.");
   });
 
   if (missingHeaders.length > 0) {
@@ -219,38 +217,34 @@ function collectHufTransferExportContext(): {
       continue;
     }
 
-    const rowErrors: ValidationError[] = [];
-    const transfer = parseTransferRow(row, rowNumber, headerMap, rowErrors);
-    errors.push(...rowErrors);
+    const transferResult = parseTransferRow(row, rowNumber, headerMap);
+    errors.push(...transferResult.errors);
 
-    if (transfer) {
-      transfers.push(transfer);
+    if (transferResult.transfer) {
+      transfers.push(transferResult.transfer);
     }
   }
 
   return { sourceAccount, transfers, errors };
 }
 
-function readConfig(errors: ValidationError[]): Record<string, string> {
+function readConfig(): {
+  config: Record<string, string>;
+  errors: ValidationError[];
+  isReadable: boolean;
+} {
+  const errors: ValidationError[] = [];
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG_SHEET_NAME);
 
   if (!sheet) {
-    errors.push({
-      rowNumber: null,
-      field: CONFIG_SHEET_NAME,
-      message: "Nem található a CONFIG munkalap.",
-    });
-    return {};
+    addValidationError(errors, null, CONFIG_SHEET_NAME, "Nem található a CONFIG munkalap.");
+    return { config: {}, errors, isReadable: false };
   }
 
   const values = sheet.getDataRange().getValues();
   if (values.length < 1) {
-    errors.push({
-      rowNumber: null,
-      field: CONFIG_SHEET_NAME,
-      message: "A CONFIG munkalapon nincs fejlécsor.",
-    });
-    return {};
+    addValidationError(errors, null, CONFIG_SHEET_NAME, "A CONFIG munkalapon nincs fejlécsor.");
+    return { config: {}, errors, isReadable: false };
   }
 
   const headers = values[0].map((cell) => stringValue(cell));
@@ -258,23 +252,15 @@ function readConfig(errors: ValidationError[]): Record<string, string> {
   const valueIndex = headers.indexOf("value");
 
   if (propertyIndex === -1) {
-    errors.push({
-      rowNumber: 1,
-      field: "property",
-      message: "A CONFIG munkalapon hiányzik a property oszlop.",
-    });
+    addValidationError(errors, 1, "property", "A CONFIG munkalapon hiányzik a property oszlop.");
   }
 
   if (valueIndex === -1) {
-    errors.push({
-      rowNumber: 1,
-      field: "value",
-      message: "A CONFIG munkalapon hiányzik a value oszlop.",
-    });
+    addValidationError(errors, 1, "value", "A CONFIG munkalapon hiányzik a value oszlop.");
   }
 
   if (propertyIndex === -1 || valueIndex === -1) {
-    return {};
+    return { config: {}, errors, isReadable: false };
   }
 
   const config: Record<string, string> = {};
@@ -287,26 +273,25 @@ function readConfig(errors: ValidationError[]): Record<string, string> {
     }
 
     if (config[property] !== undefined) {
-      errors.push({
-        rowNumber,
-        field: property,
-        message: "Duplikált CONFIG property.",
-      });
+      addValidationError(errors, rowNumber, property, "Duplikált CONFIG property.");
       continue;
     }
 
     config[property] = stringValue(values[rowIndex][valueIndex]);
   }
 
-  return config;
+  return { config, errors, isReadable: true };
 }
 
 function parseTransferRow(
   row: unknown[],
   rowNumber: number,
   headerMap: Record<RequiredHeader, number>,
-  errors: ValidationError[],
-): InvoiceTransfer | null {
+): {
+  transfer: InvoiceTransfer | null;
+  errors: ValidationError[];
+} {
+  const errors: ValidationError[] = [];
   const beneficiaryName = stringValue(row[headerMap.Kedvezményezett]);
   const rawAccount = stringValue(row[headerMap.Számlaszám]);
   const beneficiaryAccount = normalizeAccount(rawAccount);
@@ -319,55 +304,58 @@ function parseTransferRow(
   validateTextField(comment, "Közlemény", 140, rowNumber, false, errors);
 
   if (currency !== EXPORT_CURRENCY) {
-    errors.push({
-      rowNumber,
-      field: "pénznem",
-      message: "Csak HUF pénznemű számla exportálható.",
-    });
+    addValidationError(errors, rowNumber, "pénznem", "Csak HUF pénznemű számla exportálható.");
   }
 
   if (!isValidGiroAccount(beneficiaryAccount)) {
-    errors.push({
+    addValidationError(
+      errors,
       rowNumber,
-      field: "Számlaszám",
-      message: "A kedvezményezett számlaszáma 16 vagy 24 számjegyű GIRO szám lehet.",
-    });
+      "Számlaszám",
+      "A kedvezményezett számlaszáma 16 vagy 24 számjegyű GIRO szám lehet.",
+    );
   }
 
   if (amount === null) {
-    errors.push({
+    addValidationError(
+      errors,
       rowNumber,
-      field: "bruttó",
-      message: "A bruttó összeg pozitív egész forintösszeg legyen.",
-    });
+      "bruttó",
+      "A bruttó összeg pozitív egész forintösszeg legyen.",
+    );
   }
 
   if (!valueDate) {
-    errors.push({
+    addValidationError(
+      errors,
       rowNumber,
-      field: "utalás napja",
-      message: "Az utalás napja kötelező dátum.",
-    });
+      "utalás napja",
+      "Az utalás napja kötelező dátum.",
+    );
   } else if (isPastDate(valueDate)) {
-    errors.push({
+    addValidationError(
+      errors,
       rowNumber,
-      field: "utalás napja",
-      message: "Az utalás napja nem lehet múltbeli dátum.",
-    });
+      "utalás napja",
+      "Az utalás napja nem lehet múltbeli dátum.",
+    );
   }
 
-  if (errors.some((error) => error.rowNumber === rowNumber)) {
-    return null;
+  if (errors.length > 0 || amount === null || !valueDate) {
+    return { transfer: null, errors };
   }
 
   return {
-    rowNumber,
-    beneficiaryName,
-    beneficiaryAccount,
-    amount: amount as number,
-    comment,
-    valueDate: valueDate as Date,
-    valueDateKey: formatDateKey(valueDate as Date),
+    transfer: {
+      rowNumber,
+      beneficiaryName,
+      beneficiaryAccount,
+      amount,
+      comment,
+      valueDate,
+      valueDateKey: formatDateKey(valueDate),
+    },
+    errors,
   };
 }
 
@@ -477,37 +465,36 @@ function validateTextField(
   errors: ValidationError[],
 ): void {
   if (required && value.length === 0) {
-    errors.push({
-      rowNumber,
-      field,
-      message: "Kötelező mező.",
-    });
+    addValidationError(errors, rowNumber, field, "Kötelező mező.");
     return;
   }
 
   if (value.length > maxLength) {
-    errors.push({
+    addValidationError(
+      errors,
       rowNumber,
       field,
-      message: "A mező legfeljebb " + maxLength + " karakter lehet.",
-    });
+      "A mező legfeljebb " + maxLength + " karakter lehet.",
+    );
   }
 
   if (!ALLOWED_TEXT_PATTERN.test(value)) {
-    errors.push({
+    addValidationError(
+      errors,
       rowNumber,
       field,
-      message: "A mező banki importban nem engedett karaktert tartalmaz.",
-    });
+      "A mező banki importban nem engedett karaktert, sortörést, tabulátort vagy pontosvesszőt tartalmaz.",
+    );
   }
+}
 
-  if (!CSV_SAFE_TEXT_PATTERN.test(value)) {
-    errors.push({
-      rowNumber,
-      field,
-      message: "A mező nem tartalmazhat sortörést, tabulátort vagy pontosvesszőt.",
-    });
-  }
+function addValidationError(
+  errors: ValidationError[],
+  rowNumber: number | null,
+  field: string,
+  message: string,
+): void {
+  errors.push({ rowNumber, field, message });
 }
 
 function normalizeAccount(value: string): string {
