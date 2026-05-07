@@ -47,9 +47,10 @@ Use `npm run build` as the default verification command after code changes.
 ## Workbook and Export Rules
 
 - The invoice sheet is named `SZÁMLÁK`.
+- Configuration is read from the `CONFIG` sheet. It has a header row with `property` and `value` columns.
 - Required export headers are matched by name: `Kedvezményezett`, `Számlaszám`, `Közlemény`, `bruttó`, `pénznem`, `státusz`, `utalás napja`.
 - HUF export only includes rows where `státusz` is exactly `Rögzíthető` and `pénznem` is exactly `HUF`.
-- The source account comes from Script Properties as `PAYTRACK_HUF_SOURCE_ACCOUNT`.
+- The source account comes from the `CONFIG` sheet property `PAYTRACK_HUF_SOURCE_ACCOUNT`.
 - K&H export files are `.HUF.CSV`, semicolon-delimited, encoded as `ISO-8859-2`, with a header row and at most 40 items per file.
 - The export must not silently truncate or repair invalid data. Report validation errors instead.
 
@@ -63,7 +64,7 @@ npm run build
 
 Manual scenarios to consider when changing export logic:
 
-- Missing `PAYTRACK_HUF_SOURCE_ACCOUNT` shows a validation error.
+- Missing `CONFIG` sheet or missing `PAYTRACK_HUF_SOURCE_ACCOUNT` shows a validation error.
 - Missing required sheet headers show validation errors.
 - Valid `Rögzíthető` + `HUF` rows appear in the daily summary.
 - Non-HUF rows, empty transfer dates, past dates, non-integer amounts, invalid GIRO numbers, and too-long text fields fail validation.
@@ -72,13 +73,13 @@ Manual scenarios to consider when changing export logic:
 
 ## Security and Data Handling
 
-- Do not commit `.clasp.json`, generated `build/` output, credentials, Script Property values, bank account numbers from real data, or downloaded bank import files.
+- Do not commit `.clasp.json`, generated `build/` output, credentials, CONFIG values from real data, bank account numbers from real data, or downloaded bank import files.
 - Treat invoice data, partner names, bank account numbers, and payment comments as sensitive business data.
 - Prefer validation failures over lossy transformations for payment exports.
 - Do not modify payment statuses automatically unless the user explicitly requests that behavior.
 
 ## Pull Request Notes
 
-- Summarize behavior changes and mention any spreadsheet headers, Script Properties, or Apps Script entrypoints affected.
+- Summarize behavior changes and mention any spreadsheet headers, CONFIG properties, or Apps Script entrypoints affected.
 - Include the verification command you ran, normally `npm run build`.
 - If a change cannot be verified locally because it needs a live Google Sheet or Apps Script deployment, say that explicitly.

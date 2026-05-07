@@ -57,6 +57,17 @@ A munkalap jelenleg egyszerű adatlista, fejlécek és típusos táblázat nélk
 
 A számlaszámok jellemzően GIRO formátumban vannak rögzítve, `2x8` vagy `3x8` számjegyből álló, kötőjelezett alakban.
 
+### `CONFIG` munkalap
+
+A `CONFIG` munkalap a rendszer beállításait tartalmazza. Az első sor fejléc:
+
+- `property`: a beállítás neve.
+- `value`: a beállítás értéke.
+
+A jelenleg használt property:
+
+- `PAYTRACK_HUF_SOURCE_ACCOUNT`: a HUF export terhelendő forrásszámlája.
+
 ## GIRO export szabályai
 
 Az export csak azokat a sorokat veszi figyelembe, ahol:
@@ -92,22 +103,14 @@ Ahol `SS` az adott naphoz tartozó fájl sorszáma, például `01` vagy `02`.
 
 ## Konfiguráció
 
-A HUF exporthoz be kell állítani a terhelendő MOON42 bankszámlaszámot Apps Script Script Property-ként:
+A HUF exporthoz be kell állítani a terhelendő MOON42 bankszámlaszámot a `CONFIG` munkalapon:
 
 ```text
-PAYTRACK_HUF_SOURCE_ACCOUNT
+property,value
+PAYTRACK_HUF_SOURCE_ACCOUNT,12345678-12345678-12345678
 ```
 
 Az érték lehet GIRO vagy IBAN alakú számlaszám. A rendszer a kötőjeleket és szóközöket eltávolítja export előtt.
-
-Beállítás az Apps Script felületen:
-
-1. Nyisd meg az Apps Script projektet.
-2. Project Settings.
-3. Script Properties.
-4. Add script property.
-5. Név: `PAYTRACK_HUF_SOURCE_ACCOUNT`.
-6. Érték: a HUF forrásszámla.
 
 ## Fejlesztés
 
@@ -215,7 +218,7 @@ npm run build
 
 Manuális ellenőrzési forgatókönyvek:
 
-- hiányzó `PAYTRACK_HUF_SOURCE_ACCOUNT` property esetén validációs hiba jelenik meg,
+- hiányzó `CONFIG` munkalap vagy hiányzó `PAYTRACK_HUF_SOURCE_ACCOUNT` property esetén validációs hiba jelenik meg,
 - hiányzó kötelező oszlop esetén validációs hiba jelenik meg,
 - `Rögzíthető` + `HUF` sorok megjelennek a napi összesítésben,
 - nem HUF sorok, üres utalási nap, múltbeli dátum, nem egész összeg hibáznak,

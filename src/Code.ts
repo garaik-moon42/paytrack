@@ -1,4 +1,5 @@
 const INVOICE_SHEET_NAME = "SZÁMLÁK";
+const CONFIG_SHEET_NAME = "CONFIG";
 const SOURCE_ACCOUNT_PROPERTY = "PAYTRACK_HUF_SOURCE_ACCOUNT";
 const EXPORT_STATUS = "Rögzíthető";
 const EXPORT_CURRENCY = "HUF";
@@ -156,15 +157,15 @@ function collectHufTransferExportContext(): {
   errors: ValidationError[];
 } {
   const errors: ValidationError[] = [];
-  const rawSourceAccount =
-    PropertiesService.getScriptProperties().getProperty(SOURCE_ACCOUNT_PROPERTY) || "";
+  const config = readConfig(errors);
+  const rawSourceAccount = config[SOURCE_ACCOUNT_PROPERTY] || "";
   const sourceAccount = normalizeAccount(rawSourceAccount);
 
   if (!rawSourceAccount.trim()) {
     errors.push({
       rowNumber: null,
       field: SOURCE_ACCOUNT_PROPERTY,
-      message: "A HUF forrásszámla nincs beállítva a Script Properties között.",
+      message: "A HUF forrásszámla nincs beállítva a CONFIG munkalapon.",
     });
   } else if (!isValidSourceAccount(sourceAccount)) {
     errors.push({
@@ -228,6 +229,76 @@ function collectHufTransferExportContext(): {
   }
 
   return { sourceAccount, transfers, errors };
+}
+
+function readConfig(errors: ValidationError[]): Record<string, string> {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG_SHEET_NAME);
+
+  if (!sheet) {
+    errors.push({
+      rowNumber: null,
+      field: CONFIG_SHEET_NAME,
+      message: "Nem található a CONFIG munkalap.",
+    });
+    return {};
+  }
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 1) {
+    errors.push({
+      rowNumber: null,
+      field: CONFIG_SHEET_NAME,
+      message: "A CONFIG munkalapon nincs fejlécsor.",
+    });
+    return {};
+  }
+
+  const headers = values[0].map((cell) => stringValue(cell));
+  const propertyIndex = headers.indexOf("property");
+  const valueIndex = headers.indexOf("value");
+
+  if (propertyIndex === -1) {
+    errors.push({
+      rowNumber: 1,
+      field: "property",
+      message: "A CONFIG munkalapon hiányzik a property oszlop.",
+    });
+  }
+
+  if (valueIndex === -1) {
+    errors.push({
+      rowNumber: 1,
+      field: "value",
+      message: "A CONFIG munkalapon hiányzik a value oszlop.",
+    });
+  }
+
+  if (propertyIndex === -1 || valueIndex === -1) {
+    return {};
+  }
+
+  const config: Record<string, string> = {};
+  for (let rowIndex = 1; rowIndex < values.length; rowIndex += 1) {
+    const rowNumber = rowIndex + 1;
+    const property = stringValue(values[rowIndex][propertyIndex]);
+
+    if (!property) {
+      continue;
+    }
+
+    if (config[property] !== undefined) {
+      errors.push({
+        rowNumber,
+        field: property,
+        message: "Duplikált CONFIG property.",
+      });
+      continue;
+    }
+
+    config[property] = stringValue(values[rowIndex][valueIndex]);
+  }
+
+  return config;
 }
 
 function parseTransferRow(
