@@ -10,10 +10,25 @@
         color: #202124;
       }
 
+      html {
+        background: transparent;
+      }
+
       body {
+        background: transparent;
+        box-sizing: border-box;
         margin: 0;
-        padding: 16px;
+        min-height: 100vh;
+        padding: 0;
+      }
+
+      .panel {
         background: #fff;
+        border-radius: 14px;
+        box-sizing: border-box;
+        min-height: calc(100vh - 16px);
+        overflow: hidden;
+        padding: 16px;
       }
 
       button {
@@ -81,9 +96,11 @@
     </style>
   </head>
   <body>
-    <button id="checkButton" type="button">Ellenőrzés</button>
-    <div id="status" class="status muted"></div>
-    <div id="result"></div>
+    <main class="panel">
+      <button id="checkButton" type="button">Ellenőrzés</button>
+      <div id="status" class="status muted"></div>
+      <div id="result"></div>
+    </main>
 
     <script>
       const checkButton = document.getElementById("checkButton");
