@@ -397,7 +397,7 @@ function buildExportFiles(transfers: InvoiceTransfer[]): ExportFile[] {
 
         files.push({
           id,
-          name: "paytrack-huf-" + valueDateKey + "-" + fileIndexText + ".HUF.CSV",
+          name: "paytrack-huf-" + valueDateKey + "-" + fileIndexText + ".HUF.csv",
           valueDate: formatDisplayDate(chunk[0].valueDate),
           itemCount: chunk.length,
           totalAmount: sumAmounts(chunk),
